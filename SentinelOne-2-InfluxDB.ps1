@@ -51,7 +51,7 @@ $Exe_Seconde = $lastRun.ToString("ss")
 $Skip = ""
 
 
-$URL = "https://usea1-008.sentinelone.net/web/api/v2.0/threats?skipCount=True&countOnly=false&limit=100&createdAt__gt=$Exe_Date" + "T$EXE_Hours" + "%3A$EXE_Minute" + "%3A$EXE_Seconde.0Z&apiToken=$Global:apiKey"
+$URL = "https://$Global:Tenant.sentinelone.net/web/api/v2.0/threats?skipCount=True&countOnly=false&limit=100&createdAt__gt=$Exe_Date" + "T$EXE_Hours" + "%3A$EXE_Minute" + "%3A$EXE_Seconde.0Z&apiToken=$Global:apiKey"
 
 
 
