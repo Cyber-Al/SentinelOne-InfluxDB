@@ -8,7 +8,7 @@ $Global:apiKey = "Insert API Token Key"
 $Global:InfluxServer = "Insert URL for Influx DB Server"
 $Global:InfluxDB = "Insert Database Name"
 $global:SkipValue = 100
-$Global:Tenant = "usea1-008"
+$Global:Tenant = "Insert SentinelOne Tenant name"
 $GLobal:LogTimeStamp = ""
 
 #Create the current timestamp
