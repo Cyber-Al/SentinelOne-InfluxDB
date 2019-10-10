@@ -4,19 +4,22 @@ $T = 1
 Do{
 
 $Global:ExecuteTime = Get-date
-$Global:CurrentRunTimeStamp = Get-TimeStamp $Global:ExecuteTime
 $Global:apiKey = "Insert API Token Key"
 $Global:InfluxServer = "Insert URL for Influx DB Server"
 $Global:InfluxDB = "Insert Database Name"
 $global:SkipValue = 100
-$Global:Tenant = "Insert SentinelOne Tenant"
-
+$Global:Tenant = "usea1-008"
+$GLobal:LogTimeStamp = ""
 
 #Create the current timestamp
 function Get-TimeStamp ($a) {
     
     return "{0:MM-dd-yy} {0:HH:mm:ss}" -f ($a)
     
+}
+
+Function UpdateLogTime{
+    $GLobal:LogTimeStamp = Get-TimeStamp (Get-Date)
 }
 
 function Read-LastRun {
@@ -30,37 +33,17 @@ $URL = "https://$Global:Tenant.sentinelone.net/web/api/v2.0/private/threats/filt
 $web1 = Invoke-RestMethod -uri $URL
 $temp = $web1.data
 $metrics = $temp | Where-Object title -Contains Classification
-
-
- foreach ($i in $metrics.values)
-    {
-        #$NameContat = $i.name.Trim("\")
-        #$nameContat
-        $ThreatCount = ""
-        $ThreatTitle = ""
-        $ThreatCount = $i.Count
-        $ThreatTitle = $i.Title       
-
-        $InputMetric = @{
-            Title = "$ThreatTitle"
-            Count = "$ThreatCount"
-        }
-
-        Write-Influx -Measure ThreatsClassification -Tags @{Site="Canada"} -Metrics $InputMetric -Database SentinelOne -Server http://192.168.250.151:8086 -Verbose
-    }
- 
-    }
-
+}
 
 #Get Threats in sentinel one by Computer with the creation date
 function Get_ActiveThreatByAgent
 {
 $StartTime = Get-TimeStamp (Get-Date)
 "Start --- $StartTime" | Out-file .\SentinelOneTimelog.txt -Append
-
+$Global:CurrentRunTimeStamp = Get-TimeStamp (Get-Date)
 Read-LastRun
-$Global:LastRunTimeStamp
-[datetime]$lastrun = $Global:LastRunTimeStamp
+
+[datetime]$lastrun = $Global:LastRun
 $Exe_Date = $lastRun.ToString("yyyy-MM-dd" )
 $Exe_Hours = $lastRun.ToString("HH")
 $Exe_Minute = $lastRun.ToString("mm")
@@ -120,7 +103,8 @@ $metrics = $web1.data
         catch
         {
         $ErrorMessage = $_.Exception.Message
-        "$Global:ExecuteTime" + " --- " + "$ErrorMessage" + " -- $createdDate -- $SiteName -- $AssetName -- $ThreatName -- $mitigationMode -- $Resolved -- $Classification -- $Rank -- $AgentOS -- $engines -- $username"| Out-file .\SentinelOneError.txt -Append
+        UpdateLogTime
+        "$Global:LogTimeStamp" + " --- " + "$ErrorMessage" + " -- $createdDate -- $SiteName -- $AssetName -- $ThreatName -- $mitigationMode -- $Resolved -- $Classification -- $Rank -- $AgentOS -- $engines -- $username"| Out-file .\SentinelOneError.txt -Append
         }
     }
 
@@ -130,8 +114,8 @@ $metrics = $web1.data
     $web1 = Invoke-RestMethod -uri $URLTemp
     $Global:CountWebItem = $web1.data | Measure-Object threatName
     $Global:CountWebItem.Count
-
-    $Global:CurrentRunTimeStamp  + " - " + $URLTemp + " - " + $CountWebItem.Count | Out-file .\SentinelOneTimeLog.txt -Append
+    UpdateLogTime
+    $Global:LogTimeStamp  + " - " + $URLTemp + " - " + $CountWebItem.Count | Out-file .\SentinelOneTimeLog.txt -Append
     
     } While ($Global:CountWebItem.Count -gt 0)
 }
@@ -140,14 +124,29 @@ $metrics = $web1.data
     "$Global:ExecuteTime" + " --- " + "$ErrorMessage" | Out-file .\SentinelOneError.txt -Append
 }
 "$Global:CurrentRunTimeStamp" | Out-file .\SentinelOneTimeStamp.txt -Append
-"End --- $Global:CurrentRunTimeStamp" | Out-file .\SentinelOneTimelog.txt -Append
+UpdateLogTime
+"End --- $Global:LogTimeStamp" | Out-file .\SentinelOneTimelog.txt -Append
 }
-    
 
+Do{
+ foreach ($i in $metrics.values)
+    {
+        #$NameContat = $i.name.Trim("\")
+        #$nameContat
+        $ThreatCount = ""
+        $ThreatTitle = ""
+        $ThreatCount = $i.Count
+        $ThreatTitle = $i.Title       
+
+        $InputMetric = @{
+            Title = "$ThreatTitle"
+            Count = "$ThreatCount"
+        }
+
+        Write-Influx -Measure ThreatsClassification -Tags @{Site="Canada"} -Metrics $InputMetric -Database SentinelOne -Server http://192.168.250.151:8086 -Verbose
+    }
+ 
 #Get_ThreatByClassification
-
 Get_ActiveThreatByAgent
-
 Start-Sleep -s 10
-
 } While ($t -gt 0)
