@@ -1,15 +1,15 @@
 Import-Module Influx
 $T = 1
 
-Do{
-
 $Global:ExecuteTime = Get-date
-$Global:apiKey = "Insert API Token Key"
-$Global:InfluxServer = "Insert URL for Influx DB Server"
-$Global:InfluxDB = "Insert Database Name"
+$Global:apiKey = "SENTINELONE API TOKEN"
+$Global:InfluxServer = "INFLUX DATABASE HTTP ADDRESS"
+$Global:InfluxDB = "INFLUX DATABASE NAME"
 $global:SkipValue = 100
-$Global:Tenant = "Insert SentinelOne Tenant name"
+$Global:Tenant = "SENTINEL ONE TENANT NAME"
 $GLobal:LogTimeStamp = ""
+$Global:InfluxPWD = ConvertTo-SecureString "INFLUXDB PASSWORD" -AsPlainText -Force
+$Global:InfluxCred = New-Object System.Management.Automation.PSCredential ("INFLUXDB USERNAME", $global:InfluxPWD)
 
 #Create the current timestamp
 function Get-TimeStamp ($a) {
@@ -23,8 +23,8 @@ Function UpdateLogTime{
 }
 
 function Read-LastRun {
-    $Global:LastRun = Get-Content .\SentinelOneTimeStamp.txt | Select -Last 1
-    $Global:LastRunTimeStamp = Get-TimeStamp $Global:LastRun
+    $Global:LastRun = Get-Content .\SentinelOneTimeStamp.txt | Select-Object -Last 1
+    #$Global:LastRunTimeStamp = Get-TimeStamp $Global:LastRun
 }
 
 function Get_ThreatByClassification
@@ -48,7 +48,7 @@ $Exe_Date = $lastRun.ToString("yyyy-MM-dd" )
 $Exe_Hours = $lastRun.ToString("HH")
 $Exe_Minute = $lastRun.ToString("mm")
 $Exe_Seconde = $lastRun.ToString("ss")
-$Skip = ""
+#$Skip = ""
 
 
 $URL = "https://$Global:Tenant.sentinelone.net/web/api/v2.0/threats?skipCount=True&countOnly=false&limit=100&createdAt__gt=$Exe_Date" + "T$EXE_Hours" + "%3A$EXE_Minute" + "%3A$EXE_Seconde.0Z&apiToken=$Global:apiKey"
@@ -68,7 +68,6 @@ $metrics = $web1.data
  foreach ($i in $metrics)
     {
         $SiteName = $i.SiteName
-        $assettemp = $i.agentComputerName
         $AssetName = $i.agentComputerName
         $ThreatName = $i.threatName
         $Classification = $i.classification
@@ -79,6 +78,7 @@ $metrics = $web1.data
         $AgentOS = $i.agentOsType
         $engines = $i.engines
         $username = $i.username
+        $mitigationStatus = $I.mitigationStatus
 
         $InputMetric = @{
             ThreatName = "$ThreatName"
@@ -95,10 +95,11 @@ $metrics = $web1.data
                     AgentOS = "$AgentOS"
                     Engines = "$engines"
                     Username = "$username"
+                    mitigationStatus = $mitigationStatus
                 }
         #Write Metric into the Influx Database
         Try {
-        Write-Influx -Measure ThreatsbyAgents -Tags $tag -Metrics $InputMetric -TimeStamp $createdDate -Database $Global:Influxdb -Server $Global:InfluxServer -Verbose
+					Write-Influx -Measure ThreatsbyAgents -Tags $tag -Metrics $InputMetric -TimeStamp $createdDate -Database $Global:Influxdb -Server $Global:InfluxServer -Credential $Global:InfluxCred -Verbose
         }
         catch
         {
@@ -150,3 +151,4 @@ Do{
 Get_ActiveThreatByAgent
 Start-Sleep -s 10
 } While ($t -gt 0)
+
