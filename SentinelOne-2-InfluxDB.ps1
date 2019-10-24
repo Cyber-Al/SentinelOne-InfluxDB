@@ -10,6 +10,9 @@ $Global:Tenant = "SENTINEL ONE TENANT NAME"
 $GLobal:LogTimeStamp = ""
 $Global:InfluxPWD = ConvertTo-SecureString "INFLUXDB PASSWORD" -AsPlainText -Force
 $Global:InfluxCred = New-Object System.Management.Automation.PSCredential ("INFLUXDB USERNAME", $global:InfluxPWD)
+$Global:InfluxDB_Log ="Script_Logs"
+$Global:InfluxPWDRead = ConvertTo-SecureString "Grafana1" -AsPlainText -Force
+$Global:InfluxCredRead = New-Object System.Management.Automation.PSCredential ("Grafana", $Global:InfluxPWDRead)
 
 #Create the current timestamp
 function Get-TimeStamp ($a) {
@@ -17,13 +20,52 @@ function Get-TimeStamp ($a) {
     return "{0:MM-dd-yy} {0:HH:mm:ss}" -f ($a)
     
 }
+function Get-InfluxDB {
+    param(
+        [Parameter()]
+        $influxURL = "$Global:InfluxServer/query?db=$Global:InfluxDB",
+        [Parameter()]
+        $Query
+    )
 
+    $Results = Invoke-RestMethod -Uri "$influxURL&q=$Query" -Credential $Global:InfluxCredRead
+
+    foreach($series in $results.results.series) {
+
+        $ResultSeries = @{
+            Fields = @()
+        }
+
+        foreach($tag in $series.tags.PSObject.Properties) {
+            $ResultSeries[$tag.Name] = $Tag.Value
+        }
+
+        $Columns = $series.columns
+        foreach($value in $series.values) {
+            $Result = @{}
+            for($i = 0; $i -lt $Columns.Length; $i++) {
+
+                if ($Columns[$i] -eq 'time') {
+                    $result.time = [DateTime]$value[$i]
+                } else {
+                    $Result[$columns[$i]] = $value[$i]
+                }
+            }
+
+            $ResultSeries.fields += $result
+        }
+
+        $ResultSeries
+    }
+}
 Function UpdateLogTime{
     $GLobal:LogTimeStamp = Get-TimeStamp (Get-Date)
 }
 
 function Read-LastRun {
-    $Global:LastRun = Get-Content .\SentinelOneTimeStamp.txt | Select-Object -Last 1
+    $influxTimeRead = Get-InfluxDB -Query 'Select last(ThreatName) from ThreatsbyAgents'
+    $Global:LastRun = $influxTimeRead.fields.time
+    #$Global:LastRun = Get-Content .\SentinelOneTimeStamp.txt | Select-Object -Last 1
     #$Global:LastRunTimeStamp = Get-TimeStamp $Global:LastRun
 }
 
@@ -39,7 +81,9 @@ $metrics = $temp | Where-Object title -Contains Classification
 function Get_ActiveThreatByAgent
 {
 $StartTime = Get-TimeStamp (Get-Date)
-"Start --- $StartTime" | Out-file .\SentinelOneTimelog.txt -Append
+#"Start --- $StartTime" | Out-file .\SentinelOneTimelog.txt -Append
+
+
 $Global:CurrentRunTimeStamp = Get-TimeStamp (Get-Date)
 Read-LastRun
 
@@ -105,6 +149,13 @@ $metrics = $web1.data
         {
         $ErrorMessage = $_.Exception.Message
         UpdateLogTime
+        $Tag_Log = @{
+                Event = "Error"
+        }
+        $LogMetric = @{
+            message = "$ErrorMessage" + " -- $createdDate -- $SiteName -- $AssetName -- $ThreatName -- $mitigationMode -- $Resolved -- $Classification -- $Rank -- $AgentOS -- $engines -- $username"
+        }
+        Write-Influx -Measure Get_ActiveThreatByAgent -tag $Tag_Log -Metrics $LogMetric -Database $Global:Influxdb_Log -Server $Global:InfluxServer -Credential $Global:InfluxCred -Verbose
         "$Global:LogTimeStamp" + " --- " + "$ErrorMessage" + " -- $createdDate -- $SiteName -- $AssetName -- $ThreatName -- $mitigationMode -- $Resolved -- $Classification -- $Rank -- $AgentOS -- $engines -- $username"| Out-file .\SentinelOneError.txt -Append
         }
     }
@@ -116,21 +167,43 @@ $metrics = $web1.data
     $Global:CountWebItem = $web1.data | Measure-Object threatName
     $Global:CountWebItem.Count
     UpdateLogTime
-    $Global:LogTimeStamp  + " - " + $URLTemp + " - " + $CountWebItem.Count | Out-file .\SentinelOneTimeLog.txt -Append
+    
+
+    $Tag_Log = @{
+        Event = "Log"
+    }
+    $LogMetric = @{
+        message = $URLTemp + " - " + $CountWebItem.Count
+    }
+    Write-Influx -Measure Get_ActiveThreatByAgent -tag $Tag_Log -Metrics $LogMetric -Database $Global:Influxdb_Log -Server $Global:InfluxServer -Credential $Global:InfluxCred -Verbose
+    #$Global:LogTimeStamp  + " - " + $URLTemp + " - " + $CountWebItem.Count | Out-file .\SentinelOneTimeLog.txt -Append
     
     } While ($Global:CountWebItem.Count -gt 0)
 }
     catch{
     $ErrorMessage = $_.Exception.Message
+    $Tag_Log = @{
+        Event = "Error"
+    }
+    $LogMetric = @{
+        message = $ErrorMessage
+    }
+    Write-Influx -Measure Get_ActiveThreatByAgent -tag $Tag_Log -Metrics $LogMetric -Database $Global:Influxdb_Log -Server $Global:InfluxServer -Credential $Global:InfluxCred -Verbose
     "$Global:ExecuteTime" + " --- " + "$ErrorMessage" | Out-file .\SentinelOneError.txt -Append
 }
-"$Global:CurrentRunTimeStamp" | Out-file .\SentinelOneTimeStamp.txt -Append
+
+#"$Global:CurrentRunTimeStamp" | Out-file .\SentinelOneTimeStamp.txt -Append
+#$InputMetricTimeLog = @{RunTime = "$Global:CurrentRunTimeStamp"}
+#Write-Influx -Measure LogRunTime -Metrics $InputMetricTimeLog -Database $Global:InfluxDB -Server $Global:InfluxServer -Credential $Global:InfluxCred -Verbose
 UpdateLogTime
-"End --- $Global:LogTimeStamp" | Out-file .\SentinelOneTimelog.txt -Append
+#"End --- $Global:LogTimeStamp" | Out-file .\SentinelOneTimelog.txt -Append
 }
 
+
+
 Do{
- foreach ($i in $metrics.values)
+<#
+    foreach ($i in $metrics.values)
     {
         #$NameContat = $i.name.Trim("\")
         #$nameContat
@@ -138,17 +211,15 @@ Do{
         $ThreatTitle = ""
         $ThreatCount = $i.Count
         $ThreatTitle = $i.Title       
-
-        $InputMetric = @{
-            Title = "$ThreatTitle"
+     $InputMetric = @{
+          Title = "$ThreatTitle"
             Count = "$ThreatCount"
         }
 
         Write-Influx -Measure ThreatsClassification -Tags @{Site="Canada"} -Metrics $InputMetric -Database SentinelOne -Server http://192.168.250.151:8086 -Verbose
     }
- 
+ #>
 #Get_ThreatByClassification
 Get_ActiveThreatByAgent
 Start-Sleep -s 10
 } While ($t -gt 0)
-
